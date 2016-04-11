@@ -58,6 +58,12 @@ extern NSString *kandy_chat_phone_number_verification_text;
 extern NSString * const kandyFileTypes[];
 NSString * const kandyMessageType[];
 
+extern NSString *const DOWN_PREF_KEY_PATH;
+extern NSString *const DOWN_PREF_KEY_CUSTOM_PATH;
+extern NSString *const DOWN_PREF_KEY_MAX_SIZE;
+extern NSString *const DOWN_PREF_KEY_POLICY;
+extern NSString *const DOWN_PREF_KEY_THUMB_SIZE;
+
 //Chat - Attachment
 typedef enum {
     image = 0,
@@ -91,7 +97,6 @@ typedef enum {
     USERDETAILS,
     LOGIN,
     TOKENLOGIN,
-    LOGOUT,
     CONSTATE,
     SESSION,
     VOIP,
@@ -137,6 +142,8 @@ typedef enum {
     PULL,
     PULLHISTORY,
     PULLALLMESSAAGE,
+    DELETEMESSAGE,
+    DELETEHISTORY,
     CREATEGROUP,
     MYGROUP,
     GROUPBYID,

@@ -102,6 +102,10 @@ typedef void (^handleFailureRemoteNotification)(NSError* error);
 - (void) pullHistoryEvents:(CDVInvokedUrlCommand *)command;
 - (void) getAllConversations:(CDVInvokedUrlCommand *)command;
 - (void) pullAllConversationsWithMessages:(CDVInvokedUrlCommand *)command;
+- (void) deleteAllConversations:(CDVInvokedUrlCommand *)command;
+- (void) deleteConversations:(CDVInvokedUrlCommand *)command;
+- (void) deleteHistoryEvents:(CDVInvokedUrlCommand *)command;
+
 
 //Group
 - (void) createGroup:(CDVInvokedUrlCommand *)command;
