@@ -78,17 +78,14 @@
 
 @property (nonatomic) NSString * deviceAddressBookChangedListener;
 
-// Whether or not the call start with sharing video enabled
-@property (assign) BOOL startVideoCall;
-
 // The call dialog (native)
-@property (assign) BOOL hasNativeCallView;
+@property (assign) BOOL startWithVideoEnabled;
 @property (assign) BOOL hasNativeAcknowledgement;
 @property (assign) BOOL showNativeCallPage;
-@property (assign) BOOL renewSession;
 
 //Configuration
 @property (nonatomic) NSString *downloadMediaPath;
+@property (nonatomic) NSString * useDownloadCustomPath;
 @property (assign) double mediaMaxSize;
 @property (nonatomic) NSString *autoDownloadMediaConnectionType;
 @property (nonatomic) NSString *autoDownloadThumbnailSize;
@@ -122,10 +119,9 @@
 - (void) InitializeObjects {
     
     // Set deafult for configuration variables
-    self.startVideoCall = YES;
+    self.startWithVideoEnabled = YES;
     self.hasNativeAcknowledgement = YES;
     self.showNativeCallPage = YES;
-    self.renewSession = NO;
     
     self.connectionState = @[@"DISCONNECTING", @"DISCONNECTED", @"CONNECTING", @"CONNECTED"];
     self.callState = @[@"INITIAL", @"RINGING", @"DIALING", @"TALKING", @"TERMINATED", @"ON_DOUBLE_HOLD", @"REMOTELY_HELD", @"ON_HOLD"];
@@ -217,11 +213,12 @@
         NSLog(@"configurations Variables %@", config);
         if (config && [config count] > 0) {
             NSDictionary *configvariables = config[0];
-            self.hasNativeCallView = [configvariables[@"hasNativeCallView"] boolValue];
+            self.startWithVideoEnabled = [configvariables[@"startWithVideoEnabled"] boolValue];
             self.hasNativeAcknowledgement = [configvariables[@"acknowledgeOnMsgRecieved"] boolValue];
             self.showNativeCallPage = [configvariables[@"showNativeCallPage"] boolValue];
-            self.renewSession = [configvariables[@"renewExpiredSession"] boolValue];
+
             //Kandy Settings
+            self.useDownloadCustomPath = configvariables[@"useDownloadCustomPath"];
             self.downloadMediaPath = configvariables[@"downloadMediaPath"];
             self.mediaMaxSize = [configvariables[@"mediaMaxSize"] doubleValue];
             self.autoDownloadMediaConnectionType = configvariables[@"autoDownloadMediaConnectionType"];
@@ -312,8 +309,8 @@
                     @"phoneNumber" : @"",
                     @"password" : userInfo.password,
                     @"pushGCMRegistrationId" : @"",
-                    @"user" : @"",
-                    @"userId" : userInfo.userId,
+                    @"name" : userInfo.record.userName,
+                    @"id" : userInfo.userId,
                     @"virtualPhoneNumber" : @""
                 };
                 [self notifySuccessResponse:result withCallbackID:command.callbackId];
@@ -582,6 +579,17 @@
 - (void) pullAllConversationsWithMessages:(CDVInvokedUrlCommand *)command {
     [self invokeKandyServiceByIndex:PULLALLMESSAAGE withPluginCommand:command];
 }
+- (void) deleteAllConversations:(CDVInvokedUrlCommand *)command {
+    [[Kandy sharedInstance].services.events deleteAllConversationsWithResponseCallback:^(NSError * _Nullable error) {
+        [self didHandleResponse:error];
+    }];
+}
+- (void) deleteConversations:(CDVInvokedUrlCommand *)command {
+    [self invokeKandyServiceByIndex:DELETEMESSAGE withPluginCommand:command];
+}
+- (void) deleteHistoryEvents:(CDVInvokedUrlCommand *)command {
+    [self invokeKandyServiceByIndex:DELETEHISTORY withPluginCommand:command];
+}
 
 //Group Service
 - (void) createGroup:(CDVInvokedUrlCommand *)command {
@@ -757,9 +765,19 @@
 /*
  *  Provisioning
  */
-- (void) requestCodeWithPhone:(NSString *)phoneno andISOCountryCode:(NSString *)isocode {
-    KandyAreaCode * kandyAreaCode = [[KandyAreaCode alloc] initWithISOCode:isocode andCountryName:@"" andPhonePrefix:@""];
-    [[Kandy sharedInstance].provisioning requestCode:kandyAreaCode phoneNumber:phoneno codeRetrivalMethod:EKandyValidationMethod_sms responseCallback:^(NSError *error, NSString *destinationToValidate) {
+- (void) requestCodeWithPhone:(NSString *)phoneno andISOCountryCode:(NSString *)isocode phonePrefix:(NSString *)prefix validateMethod:(NSString *)validationMethod {
+    
+    EKandyValidationMethod registerValidationMethod = EKandyValidationMethod_sms;
+    if ([prefix isEqual:[NSNull null]]) {
+        prefix = @"";
+    }
+
+    if (validationMethod && [validationMethod isEqualToString:@"CALL"]) {
+        registerValidationMethod = EKandyValidationMethod_call;
+    }
+    
+    KandyAreaCode * kandyAreaCode = [[KandyAreaCode alloc] initWithISOCode:isocode andCountryName:@"" andPhonePrefix:prefix];
+    [[Kandy sharedInstance].provisioning requestCode:kandyAreaCode phoneNumber:phoneno codeRetrivalMethod:registerValidationMethod responseCallback:^(NSError *error, NSString *destinationToValidate) {
         [self didHandleResponse:error];
     }];
 }
@@ -793,7 +811,7 @@
  * @param username The username to use.
  * @param password The password to use.
  */
--(void)connectWithUserName:(NSString *)usrname andPassword:(NSString *)pwd {
+-(void)loginWithUsername:(NSString *)usrname andPassword:(NSString *)pwd {
     
     if (usrname && [usrname isEqual:[NSNull null]]) {
         [self notifyFailureResponse:kandy_login_empty_username_text];
@@ -812,7 +830,6 @@
             self.username = usrname;
             [self registerNotifications];
             [self notifySuccessResponse:kandy_login_login_success];
-            [self enableKandyPushNotification];
         }
     }];
 }
@@ -911,8 +928,10 @@
     activecall.remoteVideoView = self.viewRemoteVideo;
 }
 
--(void)establishVoipCallTo:(NSString *)caller andWithStartVideo:(NSString *)videoenabled {
-    EKandyOutgingVoIPCallOptions outgoingCallOption = [videoenabled intValue] == 1;
+-(void)makeCall:(NSString *)caller withVideo:(NSString *)videoenabled {
+    
+    EKandyOutgingVoIPCallOptions outgoingCallOption = [videoenabled intValue] ? EKandyOutgingVoIPCallOptions_startCallWithVideo : EKandyOutgingVoIPCallOptions_startCallWithoutVideo;
+    
     if (caller && [caller isEqual:[NSNull null]]) {
         [self notifyFailureResponse:kandy_calls_invalid_phone_text_msg];
         return;
@@ -934,15 +953,18 @@
  * @param number The number phone of the callee.
  */
 
--(void)establishPSTNCall:(NSString *)caller {
+-(void)makePSTNCall:(NSNumber *)caller {
     if (caller && [caller isEqual:[NSNull null]]) {
         [self notifyFailureResponse:kandy_calls_invalid_phone_text_msg];
         return;
     }
-    NSString *destination = [caller stringByReplacingOccurrencesOfString:@"+" withString:@""];
-    destination = [destination stringByReplacingOccurrencesOfString:@"-" withString:@""];
     
-    id <KandyOutgoingCallProtocol> kandyOutgoingCall = [[Kandy sharedInstance].services.call createPSTNCall:destination destination:self.username options:EKandyOutgingPSTNCallOptions_blockedCallerID];
+    NSString *phoneno = [caller stringValue];
+    phoneno = [phoneno stringByReplacingOccurrencesOfString:@"+" withString:@""];
+    phoneno = [phoneno stringByReplacingOccurrencesOfString:@"-" withString:@""];
+    
+    id <KandyOutgoingCallProtocol> kandyOutgoingCall = [[Kandy sharedInstance].services.call createPSTNCall:self.username destination:phoneno options:EKandyOutgingPSTNCallOptions_none];
+    
     [self WillHandleOutgoingCall:kandyOutgoingCall];
 }
 
@@ -953,8 +975,8 @@
  */
 
 - (void)makeSIPTrunkCall:(NSString *)number {
-    
     NSString * initiator = nil;
+    
     [[Kandy sharedInstance].services.call createSIPTrunkCall:initiator destination:number responseCallback:^(NSError * _Nullable error, id<KandyOutgoingCallProtocol>  _Nullable outgoingCall) {
         [self WillHandleOutgoingCall:outgoingCall];
     }];
@@ -969,24 +991,42 @@
  */
 - (BOOL) checkActiveCall:(NSString *)callid {
     if (!self.activeCalls[callid]) {
-        return false;
+        if (!self.showNativeCallPage) {
+            [self notifyFailureResponse:kandy_calls_invalid_hangup_text_msg];
+            return false;
+        }
     }
     return true;
 }
 
 /**
+ * Remove call and video views out of lists.
+ *
+ * @param id The callee uri.
+ */
+
+- (void) removeCall:(NSString *)callid {
+    [[KandyUtil sharedInstance] stopRingIn];
+    [[KandyUtil sharedInstance] stopRingOut];
+    if (callid) {
+        [self.activeCalls removeObjectForKey:callid];
+    }
+    [self.viewLocalVideo setHidden:YES];
+    [self.viewLocalVideo removeFromSuperview];
+    [self.viewRemoteVideo setHidden:YES];
+    [self.viewRemoteVideo removeFromSuperview];
+}
+
+
+/**
  * Hangup current call.
  */
 -(void)hangupCall:(NSString *)callid {
-    
     if (![self checkActiveCall:callid]) return;
     id<KandyCallProtocol> activecall = (id<KandyCallProtocol>) self.activeCalls[callid];
     [activecall hangupWithResponseCallback:^(NSError *error) {
         [self didHandleResponse:error];
-        if (!error) {
-            [self.activeCalls removeObjectForKey:callid];
-        }
-        
+        [self removeCall:callid];
     }];
 }
 
@@ -1158,7 +1198,7 @@
  * @param text The message text
  */
 
--(void)sendMessageTo:(NSString *)recipient message:(NSString *)textMessage type:(NSString *)type {
+-(void)sendIM:(NSString *)recipient message:(NSString *)textMessage type:(NSString *)type {
     
     if (textMessage && [textMessage isEqual:[NSNull null]]) {
         [self notifyFailureResponse:kandy_error_message];
@@ -1198,6 +1238,7 @@
     
     if (textMessage && [textMessage isEqual:[NSNull null]]) {
         [self notifyFailureResponse:kandy_error_message];
+        return;
     }
     
     if (recipient && [recipient isEqual:[NSNull null]]) {
@@ -1447,6 +1488,20 @@
         } else {
             [self notifySuccessResponse:@(hasMoreEventsToPull)];
         }
+    }];
+}
+
+-(void) deleteConversationsFor:(NSString *)destination {
+    KandyRecord *recipient = [[KandyRecord alloc] initWithURI:destination];
+    [[Kandy sharedInstance].services.events deleteConversations:@[recipient] responseCallback:^(NSError * _Nullable error) {
+        [self didHandleResponse:error];
+    }];
+}
+
+-(void) deleteHistoryEvents:(NSString *)uuids callee:(NSString *)destination {
+    KandyRecord *recipient = [[KandyRecord alloc] initWithURI:destination];
+    [[Kandy sharedInstance].services.events deleteHistoryEvents:@[uuids] destination:recipient responseCallback:^(NSError * _Nullable error) {
+        [self didHandleResponse:error];
     }];
 }
 
@@ -2093,13 +2148,17 @@
 - (void) applyKandySettings {
     if (self.autoDownloadMediaConnectionType) {
         [[Kandy sharedInstance].services.chat.settings setAutoDownload_media_connectionType:[self.autoDownloadMediaConnectionType intValue]];
+        [[NSUserDefaults standardUserDefaults] setObject:self.autoDownloadMediaConnectionType forKey:DOWN_PREF_KEY_POLICY];
     }
     if (self.mediaMaxSize > -1) {
         [[Kandy sharedInstance].services.chat.settings setAutoDownload_media_maxSizeKB:self.mediaMaxSize];
+        [[NSUserDefaults standardUserDefaults] setObject:@(self.mediaMaxSize) forKey:DOWN_PREF_KEY_MAX_SIZE];
     }
     if (self.autoDownloadThumbnailSize) {
         [[Kandy sharedInstance].services.chat.settings setAutoDownload_thumbnailSize:[self.autoDownloadThumbnailSize  intValue]];
+        [[NSUserDefaults standardUserDefaults] setObject:self.autoDownloadThumbnailSize forKey:DOWN_PREF_KEY_THUMB_SIZE];
     }
+    [[NSUserDefaults standardUserDefaults] synchronize];
 }
 
 #pragma mark - Delegate
@@ -2133,11 +2192,6 @@
                              @"action": @"onSessionExpired",
                              @"data": error,
                              };
-    
-    if (self.renewSession) {
-        [[Kandy sharedInstance].access renewExpiredSession:^(NSError *error) {
-        }];
-    }
     
     [self notifySuccessResponse:jsonObj withCallbackID:self.kandyConnectServiceNotificationCallback];
 }
@@ -2209,10 +2263,10 @@
 -(void) stateChanged:(EKandyCallState)callState forCall:(id<KandyCallProtocol>)call{
     
     switch (callState) {
-        case EKandyCallState_talking:
         case EKandyCallState_terminated: {
-            [self.activeCalls removeObjectForKey:call.callId];
+            [self removeCall:call.callId];
         }
+        case EKandyCallState_talking:
         case EKandyCallState_notificationWaiting:
         case EKandyCallState_unknown: {
             [[KandyUtil sharedInstance] stopRingOut];
@@ -2223,15 +2277,11 @@
     }
 
     NSDictionary *jsonObj = @{
-                             @"action": @"onCallStateChanged",
-                             @"data": @{
-                                     @"state": [self.callState objectAtIndex:callState],
-                                     @"id": (call.callId ? call.callId : @"0"),
-                                     @"callee": (call.remoteRecord.uri ? call.remoteRecord.uri : @"")
-                                     }
+                                 @"action": @"onCallStateChanged",
+                                 @"data": [KandyUtil dictionaryFromKandyCall:call]
                              };
     [self notifySuccessResponse:jsonObj withCallbackID:self.kandyCallServiceNotificationCallback];
-    
+    [self notifySuccessResponse:jsonObj withCallbackID:self.kandyCallServiceNotificationPluginCallback];
 }
 
 /**
@@ -2282,6 +2332,8 @@
                                      }
                              };
     [self notifySuccessResponse:jsonObj withCallbackID:self.kandyCallServiceNotificationCallback];
+    [self notifySuccessResponse:jsonObj withCallbackID:self.kandyCallServiceNotificationPluginCallback];
+    [self removeCall:missedCall.caller.uri];
 }
 -(void) participantsChanged:(NSArray*)participants forCall:(id<KandyCallProtocol>)call{
 }

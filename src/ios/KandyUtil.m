@@ -52,13 +52,19 @@ NSString * const kandyFileTypes[] = { @"unknown", @"text", @"image", @"video", @
 NSString * const kandyMessageType[] = {@"UNKNOWN", @"CHAT", @"SMS"};
 
 //Kandy Login details
- NSString *kandy_api_key = @"_kandy_api_key";
- NSString *kandy_api_secret = @"_kandy_secret";
- NSString *kandy_host_url = @"_kandy_host_url";
+NSString *kandy_api_key = @"_kandy_api_key";
+NSString *kandy_api_secret = @"_kandy_secret";
+NSString *kandy_host_url = @"_kandy_host_url";
 
 NSString * METHOD = @"method";
 NSString * PARAMS = @"params";
 NSString * EXTRAPARAM = @"extraparam";
+
+NSString *const DOWN_PREF_KEY_PATH = @"download_path_preference";
+NSString *const DOWN_PREF_KEY_CUSTOM_PATH = @"download_custom_path_preferences";
+NSString *const DOWN_PREF_KEY_MAX_SIZE = @"media_size_picker_preference";
+NSString *const DOWN_PREF_KEY_POLICY = @"download_policy_preference";
+NSString *const DOWN_PREF_KEY_THUMB_SIZE = @"auto_download_thumbnail_size_preference";
 
 @interface KandyUtil() <CLLocationManagerDelegate, UIActionSheetDelegate>
 @property (nonatomic) AVAudioPlayer *ringin;
@@ -148,24 +154,20 @@ static KandyUtil *obj;
                                PARAMS: @"1",
                                },
                         @(VOIP) : @{
-                            METHOD: @"establishVoipCallTo:andWithStartVideo:",
+                            METHOD: @"makeCall:withVideo:",
                             PARAMS: @"2",
                             },
                         @(PSTN) : @{
-                            METHOD: @"establishPSTNCall:",
+                            METHOD: @"makePSTNCall:",
                             PARAMS: @"1",
                             },
                         @(LOGIN) : @{
-                            METHOD: @"connectWithUserName:andPassword:",
+                            METHOD: @"loginWithUsername:andPassword:",
                             PARAMS: @"2",
                         },
                     @(TOKENLOGIN) : @{
                             METHOD: @"loginWithToken:",
                             PARAMS: @"1",
-                            },
-                    @(LOGOUT) : @{
-                            METHOD: @"connectWithUserName:andPassword:",
-                            PARAMS: @"2",
                             },
                     @(APIKEY) : @{
                             METHOD: @"setKandyDomainAPIKey:andSecret:",
@@ -176,8 +178,8 @@ static KandyUtil *obj;
                             PARAMS: @"1",
                             },
                     @(REQUEST) : @{
-                            METHOD: @"requestCodeWithPhone:andISOCountryCode:",
-                            PARAMS: @"2",
+                            METHOD: @"requestCodeWithPhone:andISOCountryCode:phonePrefix:validateMethod:",
+                            PARAMS: @"4",
                             },
                     @(VALIDATE) : @{
                             METHOD: @"validate:otp:ISOCountryCode:",
@@ -196,7 +198,7 @@ static KandyUtil *obj;
                             PARAMS: @"2",
                             },
                     @(CHAT) : @{
-                            METHOD: @"sendMessageTo:message:type:",
+                            METHOD: @"sendIM:message:type:",
                             PARAMS: @"3",
                             },
                     @(OPENATTACHMENT) : @{
@@ -214,6 +216,14 @@ static KandyUtil *obj;
                     @(PULLALLMESSAAGE) : @{
                             METHOD: @"pullAllConversationsWithMessages:timestamp:moveForward:",
                             PARAMS: @"3",
+                            },
+                    @(DELETEMESSAGE): @{
+                            METHOD: @"deleteConversationsFor:",
+                            PARAMS: @"1",
+                            },
+                    @(DELETEHISTORY): @{
+                            METHOD: @"deleteHistoryEvents:callee:",
+                            PARAMS: @"2",
                             },
                     @(DOWNLOADMEDIA) : @{
                             METHOD: @"downloadMediaFromChat:",
@@ -473,10 +483,10 @@ static KandyUtil *obj;
 }
 + (NSDictionary *) dictionaryWithKandyRecord:(KandyRecord *)record {
     NSDictionary *jsonObj = @{
-                                @"uri" : record.uri,
+                                @"uri" : (record.uri ? record.uri : @""),
                                 @"type" : @(record.type),
-                                @"domain": record.domain,
-                                @"username": record.userName
+                                @"domain": (record.domain ? record.domain : @""),
+                                @"username": (record.userName ? record.userName : @"")
                              };
     return jsonObj;
 }
@@ -523,7 +533,7 @@ static KandyUtil *obj;
 
 + (NSDictionary *) dictionaryFromKandyCall:(id<KandyCallProtocol>)kandyCall {
     NSDictionary *jsonObj = @{
-                              @"callId": kandyCall.callId ,
+                              @"callId": (kandyCall.callId ? kandyCall.callId : @""),
                               @"callee": [KandyUtil dictionaryWithKandyRecord:kandyCall.remoteRecord] ,
                               @"via": @(kandyCall.audioRoute),
                               @"type": @(kandyCall.callType),
@@ -632,4 +642,5 @@ static KandyUtil *obj;
     }
     return contacts;
 }
+
 @end
